@@ -14,42 +14,56 @@ Usage:
 """
 
 import os
-from typing import Optional
-from dotenv import load_dotenv
+from typing import Optional, Any, Dict
 from langchain_core.language_models import BaseChatModel
 
-load_dotenv()
+# Provider registry — add new providers here only, no code changes elsewhere needed
+_PROVIDERS: Dict[str, Dict[str, Any]] = {
+    "gemini": {
+        "module": "langchain_google_genai",
+        "class": "ChatGoogleGenerativeAI",
+        "package": "langchain-google-genai",
+        "api_key_env": "GEMINI_API_KEY",
+        "api_key_param": "google_api_key",
+        "model_env": "GEMINI_MODEL",
+        "default_model": "gemini-2.0-flash",
+    },
+    "openai": {
+        "module": "langchain_openai",
+        "class": "ChatOpenAI",
+        "package": "langchain-openai",
+        "api_key_env": "OPENAI_API_KEY",
+        "api_key_param": "api_key",
+        "model_env": "OPENAI_MODEL",
+        "default_model": "gpt-4o",
+    },
+    "claude": {
+        "module": "langchain_anthropic",
+        "class": "ChatAnthropic",
+        "package": "langchain-anthropic",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "api_key_param": "api_key",
+        "model_env": "CLAUDE_MODEL",
+        "default_model": "claude-sonnet-4-6",
+    },
+}
 
 
 def get_llm(provider: Optional[str] = None, **kwargs) -> BaseChatModel:
-    """
-    Return a LangChain chat model for the given provider.
-
-    Args:
-        provider: One of "gemini", "openai", "claude".
-                  Defaults to LLM_PROVIDER env var (fallback: "gemini").
-        **kwargs: Override model-specific params (e.g. temperature, model).
-    """
+    """Return a LangChain chat model. Provider defaults to LLM_PROVIDER env var."""
+    _load_env()
     provider = (provider or os.getenv("LLM_PROVIDER", "gemini")).lower()
-
-    if provider == "gemini":
-        return _gemini_llm(**kwargs)
-    elif provider == "openai":
-        return _openai_llm(**kwargs)
-    elif provider == "claude":
-        return _claude_llm(**kwargs)
-    else:
+    if provider not in _PROVIDERS:
         raise ValueError(
-            f"Unknown LLM provider: '{provider}'. "
-            "Choose one of: gemini, openai, claude"
+            f"Unknown provider: '{provider}'. "
+            f"Choose from: {', '.join(_PROVIDERS)}"
         )
+    return _build_llm(_PROVIDERS[provider], **kwargs)
 
 
 def get_eval_llm(**kwargs) -> BaseChatModel:
-    """
-    Return a cheaper LLM intended for RAGAS / DeepEval evaluation calls.
-    Configured via EVAL_LLM_PROVIDER (defaults to same as LLM_PROVIDER).
-    """
+    """Return a cheaper LLM for RAGAS/DeepEval. Configured via EVAL_LLM_PROVIDER."""
+    _load_env()
     provider = os.getenv(
         "EVAL_LLM_PROVIDER",
         os.getenv("LLM_PROVIDER", "gemini")
@@ -57,60 +71,36 @@ def get_eval_llm(**kwargs) -> BaseChatModel:
     return get_llm(provider=provider, **kwargs)
 
 
-# ── Provider implementations ──────────────────────────────────────────────────
+# ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _gemini_llm(**kwargs) -> BaseChatModel:
+_env_loaded = False
+
+
+def _load_env() -> None:
+    """Load .env once per process; no-op on subsequent calls."""
+    global _env_loaded
+    if not _env_loaded:
+        from dotenv import load_dotenv
+        load_dotenv()
+        _env_loaded = True
+
+
+def _build_llm(config: Dict[str, Any], **kwargs) -> BaseChatModel:
+    """Instantiate a LangChain chat model from a provider config dict."""
     try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        module = __import__(config["module"], fromlist=[config["class"]])
+        llm_class = getattr(module, config["class"])
     except ImportError:
-        raise ImportError("Run: pip install langchain-google-genai")
+        raise ImportError(f"Run: pip install {config['package']}")
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv(config["api_key_env"])
     if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY not set in environment.")
+        raise EnvironmentError(f"{config['api_key_env']} not set in environment.")
 
-    params = {
-        "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
-        "google_api_key": api_key,
-        "temperature": 0.1,
+    params: Dict[str, Any] = {
+        "model": os.getenv(config["model_env"], config["default_model"]),
+        config["api_key_param"]: api_key,
+        "temperature": float(os.getenv("LLM_TEMPERATURE", "0.1")),
     }
     params.update(kwargs)
-    return ChatGoogleGenerativeAI(**params)
-
-
-def _openai_llm(**kwargs) -> BaseChatModel:
-    try:
-        from langchain_openai import ChatOpenAI
-    except ImportError:
-        raise ImportError("Run: pip install langchain-openai")
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise EnvironmentError("OPENAI_API_KEY not set in environment.")
-
-    params = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o"),
-        "api_key": api_key,
-        "temperature": 0.1,
-    }
-    params.update(kwargs)
-    return ChatOpenAI(**params)
-
-
-def _claude_llm(**kwargs) -> BaseChatModel:
-    try:
-        from langchain_anthropic import ChatAnthropic
-    except ImportError:
-        raise ImportError("Run: pip install langchain-anthropic")
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise EnvironmentError("ANTHROPIC_API_KEY not set in environment.")
-
-    params = {
-        "model": os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
-        "api_key": api_key,
-        "temperature": 0.1,
-    }
-    params.update(kwargs)
-    return ChatAnthropic(**params)
+    return llm_class(**params)

@@ -7,13 +7,15 @@
 - [x] Verify: import, bad-provider error, missing-key error all behave correctly
 - [x] Commit + push `feature/foundation`
 
-## Phase 2: Ingest [ ]
-- [ ] `src/ingest.py` — download 10-K/10-Q for AAPL/MSFT/NVDA via `edgartools`
-- [ ] Section-aware chunking (Item 1A, Item 7, Item 8)
-- [ ] Prepend metadata header to each chunk: `[Company | Form | Period | Section]`
-- [ ] Save chunks to `data/filings/` as JSON
-- [ ] Smoke test: `python src/ingest.py --tickers AAPL --filing-types 10-K`
-- [ ] Commit + push `feature/ingest`
+## Phase 2: Ingest ✅
+- [x] `src/ingest.py` — download 10-K/10-Q for AAPL/MSFT/NVDA via `edgartools`
+- [x] Section-aware chunking (Item 1A, Item 7, Item 8 for 10-K; Part I/II items for 10-Q)
+- [x] Prepend metadata header to each chunk: `[Company | Form | Period | Section]`
+- [x] Save per-ticker JSON + consolidated `index.json` to `data/filings/`
+- [x] `.gitignore` added (excludes data/filings/, .env, evals/results/)
+- [x] Structural tests: chunk IDs unique, metadata headers correct, error paths clean
+- [ ] Live smoke test: `python src/ingest.py --tickers AAPL --filing-types 10-K` (needs packages installed + SEC_EDGAR_USER_AGENT set)
+- [ ] Commit + push + merge `feature/ingest` PR
 
 ## Phase 3: Retriever [ ]
 - [ ] `src/retriever.py` — FAISS dense index (`bge-large-en-v1.5` embeddings)
@@ -51,4 +53,15 @@
 ---
 
 ## Review Notes
-_Append findings after each phase completes._
+
+### Phase 1 — Foundation (complete)
+- LLM factory refactored to data-driven `_PROVIDERS` registry after /simplify review
+- `load_dotenv()` moved to lazy `_load_env()` guard to avoid disk I/O on every import
+- Temperature now configurable via `LLM_TEMPERATURE` env var
+- PR #1 merged to main
+
+### Phase 2 — Ingest (branch ready, pending live test)
+- `src/ingest.py` uses `edgartools` Company API; section-aware extraction via `doc[section_key]`
+- `_extract_section_text` handles edgartools returning Section objects, strings, or None
+- All structural unit tests pass on Python 3.9
+- Pending: install `requirements.txt` and run live smoke test against real EDGAR

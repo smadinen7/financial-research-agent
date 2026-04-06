@@ -1,0 +1,28 @@
+# Environment
+.env
+*.env
+
+# Downloaded SEC filings (can be large; regenerate with src/ingest.py)
+data/filings/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Evaluation outputs (regenerate with src/evaluate.py)
+evals/results/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
